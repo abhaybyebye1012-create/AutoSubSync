@@ -39,18 +39,33 @@ jobs:
       # ============================================
       - name: Install patchelf and build tools
         run: |
-          sudo apt-get update
+          sudo apt-get update -qq
+          
+          # Install in separate steps to avoid conflicts
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake git wget curl file \
+            build-essential cmake git wget curl file
+          
+          sudo apt-get install -y --no-install-recommends \
             desktop-file-utils libfile-mimeinfo-perl \
             pkg-config libfuse-dev libcairo2-dev \
-            libglib2.0-dev libc6-dev patchelf \
-            appstream appstream-util \
-            binutils objcopy chrpath \
+            libglib2.0-dev libc6-dev
+          
+          # binutils includes objcopy, objdump, etc.
+          sudo apt-get install -y --no-install-recommends \
+            binutils patchelf chrpath appstream appstream-util
+          
+          # Additional libraries
+          sudo apt-get install -y --no-install-recommends \
             libssl-dev zlib1g-dev
           
           echo "✅ Build tools installed"
+          
+          # Verify key tools are available
+          echo "Checking tools..."
           patchelf --version
+          objcopy --version | head -1
+          objdump --version | head -1
+          echo "✅ All tools verified"
 
       # ============================================
       # STEP 3: Set up Python 3.10
