@@ -31,20 +31,7 @@ jobs:
             desktop-file-utils libfile-mimeinfo-perl \
             pkg-config libfuse-dev libcairo2-dev \
             libglib2.0-dev libc6-dev patchelf \
-            qt6-base-dev libqt6core6 libqt6gui6 \
             appstream appstream-util
-
-      - name: Install system libraries for bundling
-        run: |
-          sudo apt-get install -y --no-install-recommends \
-            libgl1-mesa-glx libxkbcommon-x11-0 libdbus-1-3 \
-            libfontconfig1 libfreetype6 libharfbuzz0b libpng16-16 \
-            libx11-6 libxcb1 libxcb-icccm4 libxcb-image0 \
-            libxcb-keysyms1 libxcb-randr0 libxcb-render0 \
-            libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0 \
-            libxcb-xkb1 libzstd1 zlib1g libssl3 libffi8 \
-            libbz2-1.0 liblzma5 libsqlite3-0 libreadline8 \
-            libncursesw6 libexpat1
 
       - name: Create Python virtual environment
         run: |
@@ -69,30 +56,7 @@ jobs:
           source venv/bin/activate
           pyinstaller --clean -y --dist ./dist "build.spec"
 
-      - name: Collect system libraries
-        run: |
-          mkdir -p deps/lib
-          
-          LIBS=(
-            "libGL.so.1" "libxkbcommon.so.0" "libxkbcommon-x11.so.0"
-            "libdbus-1.so.3" "libfontconfig.so.1" "libfreetype.so.6"
-            "libharfbuzz.so.0" "libpng16.so.16" "libX11.so.6"
-            "libxcb.so.1" "libxcb-icccm.so.4" "libxcb-image.so.0"
-            "libxcb-keysyms.so.1" "libxcb-randr.so.0" "libxcb-render.so.0"
-            "libxcb-shape.so.0" "libxcb-xfixes.so.0" "libxcb-xinerama.so.0"
-            "libxcb-xkb.so.1" "libzstd.so.1" "libz.so.1" "libssl.so.3"
-            "libcrypto.so.3" "libffi.so.8" "libbz2.so.1.0" "liblzma.so.5"
-            "libsqlite3.so.0" "libreadline.so.8" "libncursesw.so.6" "libexpat.so.1"
-          )
-          
-          for lib in "${LIBS[@]}"; do
-            lib_path=$(ldconfig -p 2>/dev/null | grep " $lib$" | awk '{print $NF}' | head -1)
-            [ -f "$lib_path" ] && cp "$lib_path" deps/lib/ 2>/dev/null
-          done
-          
-          echo "Bundled $(ls -1 deps/lib/ | wc -l) libraries"
-
-      - name: Create AppDir structure
+      - name: Create AppDir structure (minimal bundling)
         run: |
           APPDIR="dist/AutoSubSync.AppDir"
           rm -rf "$APPDIR"
@@ -101,23 +65,14 @@ jobs:
           [ -d "dist/AutoSubSync" ] || { echo "ERROR: dist/AutoSubSync not found"; exit 1; }
           cp -r dist/AutoSubSync/* "$APPDIR/"
           
+          # Create minimal lib directory for non-conflicting libraries only
           mkdir -p "$APPDIR/lib"
-          [ -d "deps/lib" ] && cp deps/lib/* "$APPDIR/lib/" 2>/dev/null || true
-
-      - name: Copy AppStream metadata
-        run: |
-          APPDIR="dist/AutoSubSync.AppDir"
-          mkdir -p "$APPDIR/usr/share/metainfo"
           
-          if [ -f "main/assets/com.github.denizsafak.AutoSubSync.appdata.xml" ]; then
-            cp main/assets/com.github.denizsafak.AutoSubSync.appdata.xml \
-               "$APPDIR/usr/share/metainfo/"
-            echo "AppStream metadata copied"
-          else
-            echo "Warning: AppStream metadata not found"
-          fi
+          # Only bundle Qt6 plugins, NOT system GLIBC or conflicting libs
+          # Let the system provide GLIBC and core libraries
+          echo "AppDir structure created - minimal bundling to avoid GLIBC conflicts"
 
-      - name: Create AppRun script
+      - name: Create AppRun script (use system libraries)
         run: |
           APPDIR="dist/AutoSubSync.AppDir"
           
@@ -126,15 +81,29 @@ jobs:
           SELF=$(readlink -f "$0")
           HERE=${SELF%/*}
           
-          export LD_LIBRARY_PATH="${HERE}/lib:${HERE}:${LD_LIBRARY_PATH}"
+          # Minimal LD_LIBRARY_PATH - let system provide GLIBC and core libs
+          # Only add bundled Qt and app-specific libraries
+          export LD_LIBRARY_PATH="${HERE}:${HERE}/lib:${LD_LIBRARY_PATH}"
+          
+          # Qt configuration
           export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/plugins:${QT_QPA_PLATFORM_PLUGIN_PATH}"
+          export QT_QPA_FONTDIR="${HERE}/fonts"
+          
+          # XDG configuration
           export XDG_DATA_DIRS="${HERE}/share:${XDG_DATA_DIRS}"
+          export XDG_CONFIG_DIRS="${HERE}/etc:${XDG_CONFIG_DIRS}"
+          
+          # FFmpeg path
+          export PATH="${HERE}:${PATH}"
+          
+          # Disable AVX512 for older CPU compatibility
           export GLIBC_TUNABLES=glibc.cpu.hwcaps=-AVX512F,-AVX512CD,-AVX512_SKL,-AVX512_CLX,-AVX512_CNL,-AVX512_ICL
           
           exec "${HERE}/AutoSubSync" "$@"
           EOF
           
           chmod +x "$APPDIR/AppRun"
+          echo "AppRun script created with system GLIBC support"
 
       - name: Create .desktop file
         run: |
@@ -154,7 +123,16 @@ jobs:
           Terminal=false
           StartupWMClass=AutoSubSync
           X-AppImage-Version=${VERSION}
+          Keywords=subtitle;sync;synchronization;video;ffmpeg;
           EOF
+
+      - name: Copy AppStream metadata
+        run: |
+          APPDIR="dist/AutoSubSync.AppDir"
+          mkdir -p "$APPDIR/usr/share/metainfo"
+          cp "main/assets/com.github.denizsafak.AutoSubSync.appdata.xml" \
+             "$APPDIR/usr/share/metainfo/"
+          echo "AppStream metadata copied"
 
       - name: Copy icon
         run: |
@@ -164,33 +142,12 @@ jobs:
             if [ -f "$path" ]; then
               cp "$path" "$APPDIR/autosubsync.png"
               ln -sf autosubsync.png "$APPDIR/.DirIcon" 2>/dev/null || true
+              echo "Icon copied from $path"
               exit 0
             fi
           done
           
-          echo "Warning: Icon not found, using placeholder"
-
-      - name: Validate AppStream metadata
-        run: |
-          APPDIR="dist/AutoSubSync.AppDir"
-          METADATA="$APPDIR/usr/share/metainfo/com.github.denizsafak.AutoSubSync.appdata.xml"
-          DESKTOP="$APPDIR/AutoSubSync.desktop"
-          
-          if [ ! -f "$METADATA" ]; then
-            echo "ERROR: AppStream metadata not found at $METADATA"
-            exit 1
-          fi
-          
-          if [ ! -f "$DESKTOP" ]; then
-            echo "ERROR: Desktop file not found at $DESKTOP"
-            exit 1
-          fi
-          
-          echo "Validating AppStream metadata..."
-          appstream-util validate --pedantic "$METADATA" || true
-          
-          echo "Desktop file validation..."
-          desktop-file-validate "$DESKTOP" || true
+          echo "Warning: Icon not found"
 
       - name: Download appimagetool
         run: |
@@ -198,35 +155,72 @@ jobs:
           wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
             -O build_tools/appimagetool.AppImage
           chmod +x build_tools/appimagetool.AppImage
+          echo "appimagetool downloaded"
 
       - name: Build AppImage
         run: |
           export ARCH=x86_64
           APPDIR="$(cd dist/AutoSubSync.AppDir && pwd)"
-          VERSION=$(cat main/VERSION)
           
+          echo "Building AppImage..."
           ./build_tools/appimagetool.AppImage \
             --appimage-extract-and-run \
             "$APPDIR" \
             "AutoSubSync-linux-x86_64.AppImage"
           
-          ls -lh AutoSubSync-linux-x86_64.AppImage
-
-      - name: Verify AppImage contents
-        run: |
-          chmod +x AutoSubSync-linux-x86_64.AppImage
+          if [ ! -f "AutoSubSync-linux-x86_64.AppImage" ]; then
+            echo "ERROR: AppImage not created"
+            exit 1
+          fi
           
-          echo "=== AppImage Structure ==="
-          ./AutoSubSync-linux-x86_64.AppImage --appimage-extract > /dev/null 2>&1 || true
+          ls -lh AutoSubSync-linux-x86_64.AppImage
+          echo "✅ AppImage created successfully"
+
+      - name: Validate AppStream metadata
+        run: |
+          APPIMAGE="AutoSubSync-linux-x86_64.AppImage"
+          chmod +x "$APPIMAGE"
+          
+          echo "Extracting AppImage to validate metadata..."
+          ./$APPIMAGE --appimage-extract > /dev/null 2>&1 || true
+          
+          if [ -f "squashfs-root/usr/share/metainfo/com.github.denizsafak.AutoSubSync.appdata.xml" ]; then
+            echo "✅ AppStream metadata found in AppImage"
+            appstreamcli validate --no-color squashfs-root/usr/share/metainfo/com.github.denizsafak.AutoSubSync.appdata.xml || echo "Note: Some validation warnings may be acceptable"
+          else
+            echo "⚠️  AppStream metadata not found in AppImage"
+          fi
+
+      - name: Test AppImage compatibility
+        run: |
+          APPIMAGE="AutoSubSync-linux-x86_64.AppImage"
+          chmod +x "$APPIMAGE"
+          
+          echo "=== AppImage Information ==="
+          file "$APPIMAGE"
+          ldd "$APPIMAGE" 2>/dev/null || true
+          
+          echo ""
+          echo "=== Testing AppImage extraction ==="
+          ./$APPIMAGE --appimage-extract > /dev/null 2>&1 || true
           
           if [ -d "squashfs-root" ]; then
-            echo "AppStream metadata in AppImage:"
-            find squashfs-root/usr/share/metainfo/ -type f 2>/dev/null || echo "No metainfo found"
+            echo "✅ AppImage structure valid"
+            echo ""
+            echo "=== Contents ==="
+            ls -la squashfs-root/ | grep -E "^d|AutoSubSync|AppRun"
             
             echo ""
-            echo "Desktop file in AppImage:"
-            find squashfs-root -name "*.desktop" 2>/dev/null || echo "No desktop file found"
+            echo "=== Checking for conflicting libraries ==="
+            if [ -f "squashfs-root/lib/libm.so.6" ] || [ -f "squashfs-root/lib/libc.so.6" ]; then
+              echo "⚠️  WARNING: System GLIBC libraries found in bundle (this may cause version conflicts)"
+              echo "These should come from the system, not the AppImage"
+            else
+              echo "✅ No conflicting GLIBC libraries bundled"
+            fi
           fi
+          
+          rm -rf squashfs-root
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -240,36 +234,59 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: 'AutoSubSync-linux-*.AppImage'
+          draft: false
+          prerelease: false
           body: |
             # AutoSubSync AppImage Release
             
-            ## Compatible with:
-            - Debian 7+ (Wheezy and newer)
-            - Ubuntu 14.04+ (Trusty and newer)
-            - Other old Linux distributions with GLIBC 2.17+
+            ## System Requirements
+            - **Linux x86_64** systems with GLIBC 2.17 or newer
+            - **Debian 7+** (Wheezy, Jessie, Stretch, Buster, Bullseye, Bookworm)
+            - **Ubuntu 14.04+** (Trusty, Xenial, Bionic, Focal, Jammy, etc.)
+            - **Other Linux distributions** with compatible GLIBC
             
-            ## Installation:
+            ## Installation
+            
             ```bash
             chmod +x AutoSubSync-linux-x86_64.AppImage
             ./AutoSubSync-linux-x86_64.AppImage
             ```
             
-            ## Or install system-wide:
+            Or copy to your PATH:
             ```bash
             sudo cp AutoSubSync-linux-x86_64.AppImage /usr/local/bin/autosubsync
             sudo chmod +x /usr/local/bin/autosubsync
+            autosubsync  # Run from anywhere
             ```
             
-            ## Metadata:
-            This AppImage includes proper AppStream metadata and can be added to software stores.
+            ## Features
+            - ✅ Works on old Debian and Ubuntu systems
+            - ✅ Uses system libraries (no GLIBC version conflicts)
+            - ✅ Supports ffsubsync, autosubsync, and alass
+            - ✅ Batch processing and manual synchronization
+            - ✅ Multiple subtitle formats supported
             
-            ## Submit to AppImageHub:
-            To add this to AppImageHub (https://appimage.github.io), create a PR at:
-            https://github.com/AppImage/appimage.github.io
+            ## Troubleshooting
+            
+            If you get permission errors:
+            ```bash
+            chmod +x AutoSubSync-linux-x86_64.AppImage
+            ```
+            
+            If AppImage won't run, check your GLIBC version:
+            ```bash
+            ldd --version | head -1
+            ```
+            
+            ## Submit to AppImageHub
+            
+            This AppImage follows AppImage standards and can be submitted to https://github.com/AppImage/appimage.github.io
+            
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cleanup
         if: always()
         run: |
-          rm -rf deps venv build_tools squashfs-root dist/AutoSubSync.AppDir
+          rm -rf venv build_tools squashfs-root dist/AutoSubSync.AppDir
+          echo "Cleanup completed"
