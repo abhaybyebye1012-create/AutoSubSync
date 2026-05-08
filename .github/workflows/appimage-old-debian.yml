@@ -1,0 +1,291 @@
+name: Build AppImage (Old Debian Compatible)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  build-appimage:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        arch: ['x86_64', 'aarch64']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install system dependencies for building
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libgl1-mesa-dev \
+            libxkbcommon-x11-0 \
+            libdbus-1-3 \
+            libfontconfig1 \
+            libfreetype6 \
+            libharfbuzz0b \
+            libpng16-16 \
+            libx11-6 \
+            libxcb1 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render0 \
+            libxcb-shape0 \
+            libxcb-xfixes0 \
+            libxcb-xinerama0 \
+            libxcb-xkb1 \
+            libxkbcommon-x11-0 \
+            libxkbcommon0 \
+            libzstd1 \
+            zlib1g \
+            libssl3 \
+            libffi8 \
+            libbz2-1.0 \
+            liblzma5 \
+            libsqlite3-0 \
+            libreadline8 \
+            libncursesw6 \
+            wget \
+            curl \
+            git \
+            file \
+            patchelf
+
+      - name: Create virtual environment and install Python dependencies
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev]"
+
+      - name: Download and bundle system libraries for old Debian
+        run: |
+          mkdir -p deps/lib
+          
+          # Copy essential system libraries
+          # These support even very old Debian installations
+          for lib in \
+            libGL.so.1 \
+            libxkbcommon.so.0 \
+            libxkbcommon-x11.so.0 \
+            libdbus-1.so.3 \
+            libfontconfig.so.1 \
+            libfreetype.so.6 \
+            libharfbuzz.so.0 \
+            libpng16.so.16 \
+            libX11.so.6 \
+            libxcb.so.1 \
+            libxcb-icccm.so.4 \
+            libxcb-image.so.0 \
+            libxcb-keysyms.so.1 \
+            libxcb-randr.so.0 \
+            libxcb-render.so.0 \
+            libxcb-shape.so.0 \
+            libxcb-xfixes.so.0 \
+            libxcb-xinerama.so.0 \
+            libxcb-xkb.so.1 \
+            libzstd.so.1 \
+            libz.so.1 \
+            libssl.so.3 \
+            libcrypto.so.3 \
+            libffi.so.8 \
+            libbz2.so.1.0 \
+            liblzma.so.5 \
+            libsqlite3.so.0 \
+            libreadline.so.8 \
+            libncursesw.so.6; do
+            
+            if ldconfig -p | grep -q "$lib"; then
+              src=$(ldconfig -p | grep "$lib" | awk '{print $NF}' | head -1)
+              if [ -f "$src" ]; then
+                cp "$src" deps/lib/ 2>/dev/null || true
+              fi
+            fi
+          done
+          
+          echo "Bundled libraries:"
+          ls -la deps/lib/ | wc -l
+
+      - name: Ensure FFmpeg is present
+        run: |
+          source venv/bin/activate
+          python3 main/resources/ffmpeg_download.py
+
+      - name: Build with PyInstaller
+        run: |
+          source venv/bin/activate
+          pyinstaller --clean -y --dist ./dist "build.spec"
+
+      - name: Create AppDir structure with bundled libraries
+        run: |
+          set -e
+          APPDIR="dist/AutoSubSync.AppDir"
+          rm -rf "$APPDIR"
+          mkdir -p "$APPDIR"
+          
+          # Copy PyInstaller output
+          if [ -d "dist/AutoSubSync" ]; then
+            cp -r dist/AutoSubSync/* "$APPDIR/"
+          else
+            echo "ERROR: PyInstaller output not found"
+            exit 1
+          fi
+          
+          # Copy bundled libraries
+          mkdir -p "$APPDIR/lib"
+          if [ -d "deps/lib" ]; then
+            cp deps/lib/* "$APPDIR/lib/" 2>/dev/null || true
+          fi
+          
+          echo "AppDir structure created with $(ls -1 $APPDIR/lib | wc -l) bundled libraries"
+
+      - name: Create AppRun script with old-Debian-compatible environment
+        run: |
+          set -e
+          APPDIR="dist/AutoSubSync.AppDir"
+          
+          cat > "$APPDIR/AppRun" << 'APPRUN_EOF'
+          #!/bin/bash
+          # AppRun script for AutoSubSync AppImage - Old Debian Compatible
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          
+          # Prioritize bundled libraries
+          export LD_LIBRARY_PATH="${HERE}/lib:${HERE}:${LD_LIBRARY_PATH}"
+          
+          # Qt plugin path
+          export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/plugins:${QT_QPA_PLATFORM_PLUGIN_PATH}"
+          
+          # XDG paths for desktop integration
+          export XDG_DATA_DIRS="${HERE}/share:${XDG_DATA_DIRS}"
+          
+          # Disable GLIBC version check for maximum compatibility
+          export GLIBC_TUNABLES=glibc.cpu.hwcaps=-AVX512F,-AVX512CD,-AVX512_SKL,-AVX512_CLX,-AVX512_CNL,-AVX512_ICL
+          
+          # Execute the application
+          exec "${HERE}/AutoSubSync" "$@"
+          APPRUN_EOF
+          
+          chmod +x "$APPDIR/AppRun"
+
+      - name: Create .desktop file
+        run: |
+          set -e
+          APPDIR="dist/AutoSubSync.AppDir"
+          VERSION=$(cat main/VERSION)
+          
+          cat > "$APPDIR/AutoSubSync.desktop" << DESKTOP_EOF
+          [Desktop Entry]
+          Version=1.0
+          Name=AutoSubSync
+          GenericName=Automatic Subtitle Synchronizer
+          Exec=AppRun %f
+          Icon=autosubsync
+          Type=Application
+          Categories=AudioVideo;Video;
+          Comment=Automatic subtitle synchronization tool
+          Terminal=false
+          StartupWMClass=AutoSubSync
+          X-AppImage-Version=${VERSION}
+          DESKTOP_EOF
+
+      - name: Copy icon to AppDir
+        run: |
+          APPDIR="dist/AutoSubSync.AppDir"
+          if [ -f "main/assets/icon.png" ]; then
+            cp "main/assets/icon.png" "$APPDIR/autosubsync.png"
+            ln -sf autosubsync.png "$APPDIR/.DirIcon" || true
+            echo "Icon copied to AppDir"
+          else
+            echo "Warning: icon.png not found"
+          fi
+
+      - name: Download appimagetool
+        run: |
+          mkdir -p build_tools
+          cd build_tools
+          
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            ARCH="x86_64"
+            APPIMAGE_TOOL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          else
+            ARCH="aarch64"
+            APPIMAGE_TOOL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage"
+          fi
+          
+          wget -q "$APPIMAGE_TOOL" -O appimagetool.AppImage
+          chmod +x appimagetool.AppImage
+          
+          cd ..
+
+      - name: Build AppImage
+        run: |
+          set -e
+          APPDIR="$(pwd)/dist/AutoSubSync.AppDir"
+          
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            ARCH="x86_64"
+          else
+            ARCH="aarch64"
+          fi
+          
+          export ARCH
+          VERSION=$(cat main/VERSION)
+          APPIMAGE_NAME="AutoSubSync-linux-${ARCH}.AppImage"
+          
+          ./build_tools/appimagetool.AppImage --appimage-extract-and-run "$APPDIR" "$APPIMAGE_NAME"
+          
+          echo "=== Build Complete ==="
+          ls -lh "$APPIMAGE_NAME"
+          file "$APPIMAGE_NAME"
+
+      - name: Verify AppImage
+        run: |
+          set -e
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            APPIMAGE_NAME="AutoSubSync-linux-x86_64.AppImage"
+          else
+            APPIMAGE_NAME="AutoSubSync-linux-aarch64.AppImage"
+          fi
+          
+          chmod +x "$APPIMAGE_NAME"
+          
+          # List contents
+          echo "=== AppImage Structure ==="
+          ./$APPIMAGE_NAME --appimage-extract > /dev/null 2>&1 || true
+          du -sh squashfs-root/ 2>/dev/null || true
+          ls -la squashfs-root/lib/ 2>/dev/null | head -15 || echo "lib/ directory info not available"
+          rm -rf squashfs-root
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: AppImage-${{ matrix.arch }}
+          path: 'AutoSubSync-linux-*.AppImage'
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: 'AutoSubSync-linux-*.AppImage'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf deps venv build_tools squashfs-root
