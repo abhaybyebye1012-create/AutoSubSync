@@ -270,7 +270,7 @@ jobs:
           rm -rf squashfs-root
 
       - name: Upload AppImage artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: AppImage-${{ matrix.arch }}
           path: 'AutoSubSync-linux-*.AppImage'
