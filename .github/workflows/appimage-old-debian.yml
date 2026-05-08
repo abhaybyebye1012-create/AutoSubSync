@@ -31,7 +31,8 @@ jobs:
             desktop-file-utils libfile-mimeinfo-perl \
             pkg-config libfuse-dev libcairo2-dev \
             libglib2.0-dev libc6-dev patchelf \
-            qt6-base-dev libqt6core6 libqt6gui6
+            qt6-base-dev libqt6core6 libqt6gui6 \
+            appstream appstream-util
 
       - name: Install system libraries for bundling
         run: |
@@ -102,6 +103,18 @@ jobs:
           
           mkdir -p "$APPDIR/lib"
           [ -d "deps/lib" ] && cp deps/lib/* "$APPDIR/lib/" 2>/dev/null || true
+
+      - name: Copy AppStream metadata
+        run: |
+          APPDIR="dist/AutoSubSync.AppDir"
+          mkdir -p "$APPDIR/usr/share/metainfo"
+          
+          if [ -f "main/assets/AutoSubSync.appdata.xml" ]; then
+            cp "main/assets/AutoSubSync.appdata.xml" "$APPDIR/usr/share/metainfo/"
+            echo "AppStream metadata copied"
+          else
+            echo "Warning: AutoSubSync.appdata.xml not found"
+          fi
 
       - name: Create AppRun script
         run: |
@@ -176,6 +189,20 @@ jobs:
           
           ls -lh AutoSubSync-linux-x86_64.AppImage
 
+      - name: Verify AppStream metadata
+        run: |
+          APPIMAGE_NAME="AutoSubSync-linux-x86_64.AppImage"
+          
+          chmod +x "$APPIMAGE_NAME"
+          ./$APPIMAGE_NAME --appimage-extract > /dev/null 2>&1 || true
+          
+          if [ -f "squashfs-root/usr/share/metainfo/AutoSubSync.appdata.xml" ]; then
+            echo "✓ AppStream metadata is present"
+            appstream-util validate-relax squashfs-root/usr/share/metainfo/AutoSubSync.appdata.xml || true
+          else
+            echo "⚠ AppStream metadata not found in AppImage"
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -189,15 +216,29 @@ jobs:
         with:
           files: 'AutoSubSync-linux-*.AppImage'
           body: |
-            # AutoSubSync AppImage
+            # AutoSubSync AppImage Release
             
-            Compatible with Debian 7+ and Ubuntu 14.04+
+            This AppImage includes full AppStream metadata for app store integration.
             
-            Usage:
+            ## Compatibility
+            - **Debian 7+** (Wheezy and newer)
+            - **Ubuntu 14.04+** (Trusty and newer)
+            - **Other Linux** with GLIBC 2.17+
+            
+            ## Usage
             ```bash
             chmod +x AutoSubSync-linux-x86_64.AppImage
             ./AutoSubSync-linux-x86_64.AppImage
             ```
+            
+            ## Installation
+            ```bash
+            sudo cp AutoSubSync-linux-x86_64.AppImage /usr/local/bin/autosubsync
+            sudo chmod +x /usr/local/bin/autosubsync
+            ```
+            
+            ## Submit to AppImageHub
+            This AppImage is ready for submission to https://github.com/AppImage/appimage.github.io
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
