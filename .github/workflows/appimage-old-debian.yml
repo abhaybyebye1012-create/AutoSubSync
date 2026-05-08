@@ -109,11 +109,12 @@ jobs:
           APPDIR="dist/AutoSubSync.AppDir"
           mkdir -p "$APPDIR/usr/share/metainfo"
           
-          if [ -f "main/assets/AutoSubSync.appdata.xml" ]; then
-            cp "main/assets/AutoSubSync.appdata.xml" "$APPDIR/usr/share/metainfo/"
+          if [ -f "main/assets/com.github.denizsafak.AutoSubSync.appdata.xml" ]; then
+            cp main/assets/com.github.denizsafak.AutoSubSync.appdata.xml \
+               "$APPDIR/usr/share/metainfo/"
             echo "AppStream metadata copied"
           else
-            echo "Warning: AutoSubSync.appdata.xml not found"
+            echo "Warning: AppStream metadata not found"
           fi
 
       - name: Create AppRun script
@@ -169,6 +170,28 @@ jobs:
           
           echo "Warning: Icon not found, using placeholder"
 
+      - name: Validate AppStream metadata
+        run: |
+          APPDIR="dist/AutoSubSync.AppDir"
+          METADATA="$APPDIR/usr/share/metainfo/com.github.denizsafak.AutoSubSync.appdata.xml"
+          DESKTOP="$APPDIR/AutoSubSync.desktop"
+          
+          if [ ! -f "$METADATA" ]; then
+            echo "ERROR: AppStream metadata not found at $METADATA"
+            exit 1
+          fi
+          
+          if [ ! -f "$DESKTOP" ]; then
+            echo "ERROR: Desktop file not found at $DESKTOP"
+            exit 1
+          fi
+          
+          echo "Validating AppStream metadata..."
+          appstream-util validate --pedantic "$METADATA" || true
+          
+          echo "Desktop file validation..."
+          desktop-file-validate "$DESKTOP" || true
+
       - name: Download appimagetool
         run: |
           mkdir -p build_tools
@@ -189,18 +212,20 @@ jobs:
           
           ls -lh AutoSubSync-linux-x86_64.AppImage
 
-      - name: Verify AppStream metadata
+      - name: Verify AppImage contents
         run: |
-          APPIMAGE_NAME="AutoSubSync-linux-x86_64.AppImage"
+          chmod +x AutoSubSync-linux-x86_64.AppImage
           
-          chmod +x "$APPIMAGE_NAME"
-          ./$APPIMAGE_NAME --appimage-extract > /dev/null 2>&1 || true
+          echo "=== AppImage Structure ==="
+          ./AutoSubSync-linux-x86_64.AppImage --appimage-extract > /dev/null 2>&1 || true
           
-          if [ -f "squashfs-root/usr/share/metainfo/AutoSubSync.appdata.xml" ]; then
-            echo "✓ AppStream metadata is present"
-            appstream-util validate-relax squashfs-root/usr/share/metainfo/AutoSubSync.appdata.xml || true
-          else
-            echo "⚠ AppStream metadata not found in AppImage"
+          if [ -d "squashfs-root" ]; then
+            echo "AppStream metadata in AppImage:"
+            find squashfs-root/usr/share/metainfo/ -type f 2>/dev/null || echo "No metainfo found"
+            
+            echo ""
+            echo "Desktop file in AppImage:"
+            find squashfs-root -name "*.desktop" 2>/dev/null || echo "No desktop file found"
           fi
 
       - name: Upload artifact
@@ -218,27 +243,29 @@ jobs:
           body: |
             # AutoSubSync AppImage Release
             
-            This AppImage includes full AppStream metadata for app store integration.
+            ## Compatible with:
+            - Debian 7+ (Wheezy and newer)
+            - Ubuntu 14.04+ (Trusty and newer)
+            - Other old Linux distributions with GLIBC 2.17+
             
-            ## Compatibility
-            - **Debian 7+** (Wheezy and newer)
-            - **Ubuntu 14.04+** (Trusty and newer)
-            - **Other Linux** with GLIBC 2.17+
-            
-            ## Usage
+            ## Installation:
             ```bash
             chmod +x AutoSubSync-linux-x86_64.AppImage
             ./AutoSubSync-linux-x86_64.AppImage
             ```
             
-            ## Installation
+            ## Or install system-wide:
             ```bash
             sudo cp AutoSubSync-linux-x86_64.AppImage /usr/local/bin/autosubsync
             sudo chmod +x /usr/local/bin/autosubsync
             ```
             
-            ## Submit to AppImageHub
-            This AppImage is ready for submission to https://github.com/AppImage/appimage.github.io
+            ## Metadata:
+            This AppImage includes proper AppStream metadata and can be added to software stores.
+            
+            ## Submit to AppImageHub:
+            To add this to AppImageHub (https://appimage.github.io), create a PR at:
+            https://github.com/AppImage/appimage.github.io
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
