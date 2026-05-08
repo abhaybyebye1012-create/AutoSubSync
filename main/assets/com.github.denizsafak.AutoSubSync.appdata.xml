@@ -1,77 +1,76 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>com.github.denizsafak.AutoSubSync</id>
-  <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-3.0-or-later</project_license>
+  
   <name>AutoSubSync</name>
   <summary>Automatic subtitle synchronization tool</summary>
+  
   <description>
     <p>
       AutoSubSync is a user-friendly tool that automatically synchronizes your subtitles with your videos using powerful tools such as ffsubsync, autosubsync, and alass.
     </p>
     <p>Features:</p>
     <ul>
-      <li>Automatic synchronization using multiple sync engines (ffsubsync, autosubsync, alass)</li>
-      <li>Manual subtitle adjustment with millisecond precision</li>
-      <li>Batch processing for multiple video-subtitle pairs</li>
-      <li>Support for multiple subtitle formats (SRT, VTT, SSA, ASS, and more)</li>
-      <li>Subtitle extraction from embedded video files</li>
+      <li>Automatic subtitle synchronization using multiple algorithms (ffsubsync, autosubsync, alass)</li>
+      <li>Manual subtitle time adjustment</li>
+      <li>Batch processing of multiple video-subtitle pairs</li>
+      <li>Support for 10+ subtitle formats (SRT, VTT, ASS, SSA, and more)</li>
+      <li>Drag-and-drop interface</li>
+      <li>23 interface languages</li>
       <li>Sync tracking to avoid re-processing videos</li>
-      <li>Library manager for organizing media files</li>
-      <li>Auto-pairing with season/episode detection</li>
-      <li>Support for 23+ interface languages</li>
-      <li>Cross-platform compatibility (Windows, macOS, Linux)</li>
+      <li>Library manager for quick access to media folders</li>
     </ul>
   </description>
-  <launchable type="desktop-id">AutoSubSync.desktop</launchable>
+  
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  
   <url type="homepage">https://github.com/denizsafak/AutoSubSync</url>
   <url type="bugtracker">https://github.com/denizsafak/AutoSubSync/issues</url>
-  <url type="help">https://github.com/denizsafak/AutoSubSync#how-to-use</url>
-  <url type="donation">https://github.com/sponsors/denizsafak</url>
-  <url type="translate">https://github.com/denizsafak/AutoSubSync</url>
-  <icon type="stock">media-player</icon>
+  <url type="help">https://github.com/denizsafak/AutoSubSync/wiki</url>
+  <url type="donation">https://github.com/denizsafak/AutoSubSync</url>
+  
+  <launchable type="desktop-id">AutoSubSync.desktop</launchable>
+  
+  <screenshots>
+    <screenshot type="default">
+      <caption>Main application window - Automatic synchronization tab</caption>
+      <image type="source">https://raw.githubusercontent.com/denizsafak/AutoSubSync/main/images/AutoSubSync1.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Manual synchronization tab for fine-tuning</caption>
+      <image type="source">https://raw.githubusercontent.com/denizsafak/AutoSubSync/main/images/AutoSubSync2.png</image>
+    </screenshot>
+  </screenshots>
+  
   <categories>
     <category>AudioVideo</category>
     <category>Video</category>
     <category>Utility</category>
   </categories>
+  
   <keywords>
     <keyword>subtitle</keyword>
     <keyword>synchronization</keyword>
     <keyword>sync</keyword>
     <keyword>video</keyword>
     <keyword>ffmpeg</keyword>
-    <keyword>subtitles</keyword>
     <keyword>ffsubsync</keyword>
-    <keyword>alass</keyword>
     <keyword>autosubsync</keyword>
+    <keyword>alass</keyword>
+    <keyword>media</keyword>
   </keywords>
-  <screenshots>
-    <screenshot type="default">
-      <image>https://raw.githubusercontent.com/denizsafak/AutoSubSync/main/images/AutoSubSync1.png</image>
-      <caption>Automatic synchronization interface</caption>
-    </screenshot>
-    <screenshot>
-      <image>https://raw.githubusercontent.com/denizsafak/AutoSubSync/main/images/AutoSubSync2.png</image>
-      <caption>Manual adjustment tab</caption>
-    </screenshot>
-  </screenshots>
-  <provides>
-    <binary>assy</binary>
-  </provides>
+  
+  <content_rating type="oars-1.1" />
+  
   <requires>
-    <display_length compare="ge">1024</display_length>
+    <display_length compare="ge">800x600</display_length>
   </requires>
+  
   <recommends>
-    <memory compare="ge">2147483648</memory>
+    <internet_connection type="always" />
   </recommends>
-  <content_rating type="oars-1.1"/>
-  <releases>
-    <release version="1.0.0" date="2024-03-21">
-      <description>
-        <p>Initial release of AutoSubSync</p>
-      </description>
-    </release>
-  </releases>
+  
   <developer_name>Deniz Şafak</developer_name>
+  <update_contact>denizsafak98@gmail.com</update_contact>
 </component>
